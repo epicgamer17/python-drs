@@ -5,18 +5,28 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "python-drs"
 version = "0.1.1"
-description = "A PyTorch-inspired, event-driven Discrete Rate Simulation framework."
+description = "PyTorch-inspired, event-driven Discrete Rate Simulation (DRS) framework for fast, exact continuous-flow modeling in Python."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { file = "LICENSE" }
 authors = [{ name = "Jonathan Lamontagne Kratz" }]
 keywords = [
     "simulation",
-    "discrete-rate",
+    "discrete-rate-simulation",
     "drs",
-    "discrete-event",
-    "modeling",
+    "discrete-event-simulation",
     "continuous-flow",
+    "event-driven",
+    "modeling",
+    "simulation-framework",
+    "python-simulation",
+    "system-dynamics",
+    "hybrid-simulation",
+    "process-simulation",
+    "power-systems",
+    "scientific-computing",
+    "pytorch",
+    "engineering",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -28,6 +38,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
 dependencies = [
     "numpy>=1.21",

@@ -1,0 +1,43 @@
+site_name: python-drs
+site_url: https://python-drs.readthedocs.io/
+site_description: Event-driven Discrete Rate Simulation framework for Python
+repo_url: https://github.com/epicgamer17/python-drs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+
+plugins:
+  - search
+  - sitemap
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            show_source: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Introduction: tutorials/01_introduction.md
+      - Advanced Dynamics: tutorials/02_advanced_dynamics.md
+      - Data Streams: tutorials/03_data_streams.md
+      - Serialization: tutorials/04_serialization.md
+      - Telemetry & Callbacks: tutorials/05_telemetry_callbacks.md
+      - Operating Modes: tutorials/06_operating_modes.md
+  - API Reference:
+      - Engine: api/engine.md
+      - Module: api/module.md
+      - Variables: api/variables.md
+      - Logging & Telemetry: api/flow_telemetry.md
+      - Callbacks: api/callbacks.md
+      - Serialization: api/serialization.md
+      - Config: api/config.md
+      - Exceptions: api/exceptions.md
