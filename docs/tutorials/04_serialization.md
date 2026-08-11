@@ -1,0 +1,125 @@
+# Tutorial 4: Checkpointing & State Serialization
+
+Mining-DRS provides robust systems to save, load, and inspect the state of your models and the simulation engine. 
+
+These capabilities allow you to:
+1. **Save/Load Weights/State**: Save and reload the values of all variables in a module tree, exactly like PyTorch's `state_dict()` and `load_state_dict()`.
+2. **Export Architecture**: Export the structural schema of your modules to a JSON format (useful for drawing graphs or configuration files).
+3. **Full Simulation Checkpointing**: Capture a complete snapshot of the `DRSEngine` (including current time, step count, RNG states, event logs, and all variables/rates) to support branching scenarios or mid-run rewinding.
+
+You can find the runnable Python code for this tutorial in [04_serialization.py](file:///Users/jonathanlamontange-kratz/Documents/GitHub/mining-drs/examples/tutorial/04_serialization.py).
+
+---
+
+## 1. Module State Dict and Architecture
+
+### Saving and Loading Variable Values
+
+You can capture and restore the state of all variables using `state_dict()` and `load_state_dict()`, or write them directly to/from a file with `save_state` and `load_state`:
+
+```python
+import drs
+from drs.serialize import save_state, load_state
+
+# Define a simple module
+class Stockpile(drs.Module):
+    def __init__(self):
+        super().__init__()
+        self.capacity = drs.Variable("capacity", 500.0)
+        self.mass = drs.Level("mass", initial_value=120.0)
+
+model = Stockpile()
+
+# 1. Access the state dictionary
+print("State Dict:", model.state_dict())
+# Output: {'capacity.value': 500.0, 'mass.value': 120.0}
+
+# 2. Save state to a JSON file
+save_state(model, "stockpile_state.json")
+
+# 3. Modify local model values
+model.mass.value = 450.0
+
+# 4. Load the saved state back, restoring original values
+load_state(model, "stockpile_state.json")
+print("Restored Mass:", model.mass.value)  # Output: 120.0
+```
+
+### Exporting Architecture Schema
+
+To export only the structural layout (nested modules and variable types) without saving the actual values, use `export_architecture`:
+
+```python
+from drs.serialize import export_architecture
+
+export_architecture(model, "architecture.json")
+```
+
+---
+
+## 2. Full Engine Checkpointing (Rewind & Branch)
+
+While `save_state` only captures variable values, `save_checkpoint` captures the complete running state of the `DRSEngine` and its RNGs:
+- **Engine State**: Clock time, step count, deadlock step counter.
+- **Model Variables**: Variable values, rates, active upper/lower thresholds, and the module references that configured those rates.
+- **RNG States**: Random seed states for Python `random` and `numpy.random` to ensure deterministic execution on resume.
+- **Telemetry**: Full event logs and history logs recorded up to the checkpoint.
+
+### Example: Branching Scenario Workflow
+
+Suppose you want to run a simulation for 50 days, and then compare two different operating decisions from day 50 onward:
+- **Branch A**: High throughput, ignoring wear-and-tear.
+- **Branch B**: Conservative throughput, preserving equipment.
+
+Here is how you execute this with checkpoints:
+
+```python
+from drs import Module, Variable, Level
+from drs.engine import DRSEngine
+from drs.serialize import save_checkpoint, load_checkpoint
+
+class MineSystem(Module):
+    def __init__(self):
+        super().__init__()
+        self.stockpile = Level("ore", initial_value=0.0)
+        self.extraction_rate = Variable("mine_rate", 100.0)
+
+    def forward(self):
+        self.stockpile.rate = self.extraction_rate.value
+
+# 1. Setup model and engine
+model = MineSystem()
+engine = DRSEngine(model)
+
+# 2. Run the simulation to Day 50
+engine.run(max_time=50.0)
+print(f"Day 50 Stockpile Level: {model.stockpile.value}")
+
+# 3. Save the simulation checkpoint
+engine.save_checkpoint("day_50_checkpoint.json")
+
+# -------------------------------------------------------------
+# BRANCH A: Set mine rate to 200.0 and run until Day 100
+# -------------------------------------------------------------
+model.extraction_rate.value = 200.0
+result_a = engine.run(max_time=100.0)
+print(f"Branch A Final Level (Day 100): {model.stockpile.value}")
+
+# -------------------------------------------------------------
+# BRANCH B: Rewind to Day 50, set mine rate to 50.0, and run
+# -------------------------------------------------------------
+# Re-instantiate engine (or clear its history) and load checkpoint
+engine_b = DRSEngine(MineSystem())
+engine_b.load_checkpoint("day_50_checkpoint.json")
+
+# Modify variable in the restored model
+engine_b.model.extraction_rate.value = 50.0
+
+# Run from Day 50 to Day 100
+result_b = engine_b.run(max_time=100.0)
+print(f"Branch B Final Level (Day 100): {engine_b.model.stockpile.value}")
+```
+
+Using full checkpoints guarantees reproducibility across complex simulation scenarios.
+
+Now that you've mastered state management, move on to [Tutorial 5: Telemetry & Custom Callbacks](05_telemetry_callbacks.md) to learn how to monitor simulations and execute custom code on events.
