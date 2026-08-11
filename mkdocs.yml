@@ -5,6 +5,7 @@ repo_url: https://github.com/epicgamer17/python-drs
 
 theme:
   name: material
+  custom_dir: docs/overrides
   features:
     - navigation.sections
     - content.code.copy
