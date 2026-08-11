@@ -99,7 +99,7 @@ class DRSEngine:
         log_level: Optional[str] = None,
         callbacks: Optional[list[Callback]] = None,
         seed: Optional[int] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """
         Initialize the DRS Engine.

@@ -11,7 +11,6 @@ theme:
 
 plugins:
   - search
-  - sitemap
   - mkdocstrings:
       handlers:
         python:

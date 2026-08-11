@@ -55,7 +55,7 @@ dev = ["build", "twine", "pytest"]
 [project.urls]
 Homepage = "https://github.com/epicgamer17/python-drs"
 Repository = "https://github.com/epicgamer17/python-drs"
-Documentation = "https://github.com/epicgamer17/python-drs/tree/main/docs"
+Documentation = "https://python-drs.readthedocs.io/"
 
 [tool.setuptools]
 # Explicit package list avoids flat-layout auto-discovery surprises.

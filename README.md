@@ -107,7 +107,9 @@ If your system is best described by **continuous flow crossing discrete threshol
 
 ## Documentation
 
-Full guides, tutorials, and API reference live in the [`docs/`](docs/):
+[![Documentation](https://readthedocs.org/projects/python-drs/badge/?version=latest)](https://python-drs.readthedocs.io/)
+
+Full guides, tutorials, and API reference are available at [https://python-drs.readthedocs.io/](https://python-drs.readthedocs.io/):
 
 - [Tutorial 1: Introduction to DRS](docs/tutorials/01_introduction.md)
 - [Tutorial 2: Advanced Core Dynamics & Guardrails](docs/tutorials/02_advanced_dynamics.md)
