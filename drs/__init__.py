@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Configure a NullHandler to prevent "No handler found" warnings
 # Users of the library can configure their own logging handlers
