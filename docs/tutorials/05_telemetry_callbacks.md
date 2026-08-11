@@ -1,10 +1,8 @@
 # Tutorial 5: Telemetry & Custom Callbacks
 
-To build production-ready simulators, you need a way to monitor the internal states of your modules, track custom performance metrics (such as operating costs, throughput, or efficiency), and hook custom code into the simulation lifecycle. 
+To build production-ready simulators, you need a way to monitor the internal states of your modules, track custom performance metrics (such as throughput or efficiency), and hook custom code into the simulation lifecycle.
 
-This tutorial covers the two main monitoring APIs in Mining-DRS: **Telemetry** and **Callbacks**.
-
-You can find the runnable Python code for this tutorial in [05_telemetry_callbacks.py](file:///Users/jonathanlamontange-kratz/Documents/GitHub/mining-drs/examples/tutorial/05_telemetry_callbacks.py).
+This tutorial covers the two main monitoring APIs in python-drs: **Telemetry** and **Callbacks**.
 
 ---
 
@@ -20,43 +18,43 @@ from drs import Module, Level, Variable
 from drs.telemetry import Telemetry
 from drs.engine import DRSEngine
 
-class GrindingMill(Module):
+class ProcessingUnit(Module):
     def __init__(self):
         super().__init__()
-        self.ore = Level("ore_milled", initial_value=0.0)
-        self.power_draw = Variable("power_draw_kw", 450.0) # constant power consumption
+        self.processed = Level("processed", initial_value=0.0)
+        self.power_draw = Variable("power_draw_kw", 450.0)  # constant power consumption
 
     def forward(self):
-        # Stop milling if we have reached our target of 500 tons
-        if self.ore.value >= 500.0 - 1e-6:
-            self.ore.rate = 0.0
+        # Stop processing when we have reached our target of 500 units
+        if self.processed.value >= 500.0 - 1e-6:
+            self.processed.rate = 0.0
         else:
-            self.ore.rate = 100.0
-            self.ore.upper_threshold = 500.0
+            self.processed.rate = 100.0
+            self.processed.upper_threshold = 500.0
 
 # 1. Setup model, engine, and telemetry
-model = GrindingMill()
+model = ProcessingUnit()
 engine = DRSEngine(model)
 telemetry = Telemetry(model)
 engine.attach_telemetry(telemetry)
 
 # 2. Register a custom derived metric
 # Signature: calc_fn(current_time, model, state, history) -> float
-def calc_energy_efficiency(t, mod, state, history):
-    # Calculate cumulative energy (kWh) divided by tons milled
-    milled_tons = mod.ore.value
+def calc_energy_per_unit(t, mod, state, history):
+    # Calculate cumulative energy (kWh) divided by units processed
+    processed_units = mod.processed.value
     power = mod.power_draw.value
     total_energy_kwh = power * t
-    return total_energy_kwh / milled_tons if milled_tons > 0 else 0.0
+    return total_energy_kwh / processed_units if processed_units > 0 else 0.0
 
-telemetry.register_metric("kwh_per_ton", calc_energy_efficiency)
+telemetry.register_metric("kwh_per_unit", calc_energy_per_unit)
 
 # 3. Run the engine
 engine.run(max_time=10.0)
 
 # 4. Extract telemetry records as a pandas DataFrame
 df = telemetry.to_dataframe()
-print(df[["time", "ore_milled", "kwh_per_ton"]].head())
+print(df[["time", "processed", "kwh_per_unit"]].head())
 ```
 
 ### Live Snapshots
@@ -65,7 +63,7 @@ If you are building a live dashboard or writing real-time logs, pass a callback 
 
 ```python
 def stream_to_console(state_snapshot):
-    print(f"Live Snapshot: t={state_snapshot['time']:.2f} | Ore={state_snapshot['ore_milled']:.1f}")
+    print(f"Live Snapshot: t={state_snapshot['time']:.2f} | Processed={state_snapshot['processed']:.1f}")
 
 telemetry = Telemetry(model, on_snapshot=stream_to_console)
 ```
@@ -105,7 +103,7 @@ engine = DRSEngine(model, callbacks=[logger_callback])
 
 ## 3. Built-in Progress Bar Callback
 
-Mining-DRS includes a built-in progress bar callback that uses the `rich` library to show a visual CLI progress bar during execution.
+python-drs includes a built-in progress bar callback that uses the `rich` library to show a visual CLI progress bar during execution.
 
 To enable it, set `progress_bar=True` when initializing `DRSEngine`:
 

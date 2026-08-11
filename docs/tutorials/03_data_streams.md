@@ -1,10 +1,8 @@
 # Tutorial 3: Streaming Inputs & Data Sources
 
-In real-world operations, material flowing through a system is rarely homogeneous. For example, in a mining operation, different truckloads of ore have different ore grades (percentage of valuable metal) and impurities. 
+In real-world systems, material flowing through a network is rarely homogeneous. For example, in a chemical processing line, batches of fluid arrive with different volumes and solute concentrations.
 
-To model this, Mining-DRS provides `drs.DataSource` and `drs.DataPoint` to stream batches of discrete parameters into the continuous simulation.
-
-You can find the runnable Python code for this tutorial in [03_data_streams.py](file:///Users/jonathanlamontange-kratz/Documents/GitHub/mining-drs/examples/tutorial/03_data_streams.py).
+To model this, python-drs provides `drs.DataSource` and `drs.DataPoint` to stream batches of discrete parameters into the continuous simulation.
 
 ---
 
@@ -19,26 +17,26 @@ Because `DataSource` inherits from `drs.Module`, any execution context tracking 
 import random
 from drs import DataSource, DataPoint
 
-class MineTruckSource(DataSource):
-    """Generates continuous truck arrivals with varying mass and metal grade."""
+class BatchSource(DataSource):
+    """Generates incoming batches with varying volume and concentration."""
 
     def __init__(self, seed: int = 42):
         super().__init__()
         self.rng = random.Random(seed)
-        self.total_trucks = 10
-        self.current_truck = 0
+        self.total_batches = 10
+        self.current_batch = 0
 
     def __next__(self) -> DataPoint:
-        if self.current_truck >= self.total_trucks:
+        if self.current_batch >= self.total_batches:
             raise StopIteration
-        
-        self.current_truck += 1
-        
-        # Generate random characteristics for the truck's load
-        mass = self.rng.uniform(40.0, 60.0)    # tons of rock
-        grade = self.rng.uniform(0.5, 1.8)     # % metal grade
-        
-        return DataPoint(mass=mass, grade=grade)
+
+        self.current_batch += 1
+
+        # Generate random characteristics for the batch
+        volume = self.rng.uniform(4.0, 6.0)      # units of volume
+        concentration = self.rng.uniform(0.5, 1.8)  # % solute concentration
+
+        return DataPoint(volume=volume, concentration=concentration)
 ```
 
 ---
@@ -47,83 +45,83 @@ class MineTruckSource(DataSource):
 
 You retrieve batches from the datasource using the standard `next()` function or by calling the module (since `__call__` wraps the data retrieval).
 
-Here is a `Conveyor` module that pulls data from a source and loads it into a stockpile, calculating the average metal grade of the stockpile dynamically:
+Here is a `MixingTank` module that pulls data from a source, loads it into the tank, and discharges a blended mixture with the average solute concentration:
 
 ```python
 import drs
 from drs import Flow
 
-class OreConveyor(drs.Module):
-    def __init__(self, source: MineTruckSource):
+class MixingTank(drs.Module):
+    def __init__(self, source: BatchSource):
         super().__init__()
         self.source = source
-        
-        # Stockpile state
-        self.ore_mass = drs.Level("ore_mass", initial_value=0.0)
-        self.metal_mass = drs.Level("metal_mass", initial_value=0.0)
-        
+
+        # Tank state
+        self.volume = drs.Level("volume", initial_value=0.0)
+        self.solute = drs.Level("solute", initial_value=0.0)
+
         # Current batch properties
-        self.active_grade = drs.Variable("active_grade", 0.0)
+        self.active_concentration = drs.Variable("active_concentration", 0.0)
 
     def forward(self):
-        # Check if the stockpile is empty; if so, we can process a new batch
-        if self.ore_mass.value <= 1e-6:
+        # Check if the tank is empty; if so, we can process a new batch
+        if self.volume.value <= 1e-6:
             try:
-                # Retrieve next truck from source
+                # Retrieve next batch from source
                 batch = next(self.source)
-                
+
                 # Update level parameters
-                self.ore_mass.value = batch.mass
-                self.metal_mass.value = batch.mass * (batch.grade / 100.0)
-                self.active_grade.value = batch.grade
-                
-                print(f"Loaded truck: mass={batch.mass:.1f}t, grade={batch.grade:.2f}%")
+                self.volume.value = batch.volume
+                self.solute.value = batch.volume * (batch.concentration / 100.0)
+                self.active_concentration.value = batch.concentration
+
+                print(f"Loaded batch: volume={batch.volume:.1f}, concentration={batch.concentration:.2f}%")
             except StopIteration:
                 # No more data left in stream
-                self.ore_mass.rate = 0.0
-                self.metal_mass.rate = 0.0
+                self.volume.rate = 0.0
+                self.solute.rate = 0.0
                 return None
 
-        # Conveyor transports ore to processing at 10 tons per hour
-        discharge_rate = min(10.0, self.ore_mass.value)
-        
-        # Calculate grade of outflow (uniform blending assumption)
-        grade_fraction = self.metal_mass.value / self.ore_mass.value if self.ore_mass.value > 0 else 0.0
-        metal_discharge = discharge_rate * grade_fraction
-        
-        self.ore_mass.rate = -discharge_rate
-        self.metal_mass.rate = -metal_discharge
-        
-        # Return outflow as a Flow object containing mass and average grade
-        return Flow((discharge_rate, grade_fraction * 100.0))
+        # Discharge well-mixed fluid at 1.0 units of volume per time step
+        discharge_rate = min(1.0, self.volume.value)
+
+        # Calculate concentration of outflow (uniform blending assumption)
+        concentration_fraction = self.solute.value / self.volume.value if self.volume.value > 0 else 0.0
+        solute_discharge = discharge_rate * concentration_fraction
+
+        self.volume.rate = -discharge_rate
+        self.solute.rate = -solute_discharge
+
+        # Return outflow as a Flow object containing volume and concentration
+        return Flow((discharge_rate, concentration_fraction * 100.0))
 ```
 
 ---
 
 ## 3. Running the Simulation
 
-Let's wire up the conveyor, run the simulation, and print out the audit logs from the telemetry history:
+Let's wire up the mixing tank, run the simulation, and print out the telemetry history:
 
 ```python
 from drs.engine import DRSEngine
 from drs.telemetry import Telemetry
 
 # Initialize components
-source = MineTruckSource()
-conveyor = OreConveyor(source)
+source = BatchSource()
+tank = MixingTank(source)
 
 # Create engine and attach telemetry
-engine = DRSEngine(conveyor)
-telemetry = Telemetry(conveyor)
+engine = DRSEngine(tank)
+telemetry = Telemetry(tank)
 engine.attach_telemetry(telemetry)
 
-# Run the simulation until all trucks are processed
+# Run the simulation until all batches are processed
 result = engine.run(max_time=100.0)
 
-# Print out history of stockpile contents
+# Print out history of tank contents
 df = result.history
 print("\nSimulation Log Snapshot:")
-print(df[["time", "ore_mass", "active_grade"]].head(15))
+print(df[["time", "volume", "active_concentration"]].head(15))
 ```
 
-Now that you know how to handle complex streaming data in Mining-DRS, check out [Tutorial 4: Checkpointing & State Serialization](04_serialization.md) to learn how to save, restore, and fork simulation states!
+Now that you know how to handle complex streaming data in python-drs, check out [Tutorial 4: Checkpointing & State Serialization](04_serialization.md) to learn how to save, restore, and fork simulation states!

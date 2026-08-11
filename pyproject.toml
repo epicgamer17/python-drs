@@ -16,7 +16,6 @@ keywords = [
     "drs",
     "discrete-event",
     "modeling",
-    "mining",
     "continuous-flow",
 ]
 classifiers = [

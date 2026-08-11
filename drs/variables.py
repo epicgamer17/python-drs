@@ -428,7 +428,7 @@ class Level(Variable):
     """A variable that accumulates over time based on a rate.
 
     Levels are the primary way to model physical quantities that flow or change
-    continuously over time (e.g., mass in a stockpile, energy in a battery).
+    continuously over time (e.g., volume in a tank, energy in a battery).
 
     Attributes:
         upper_threshold (float): The maximum limit for the level. The engine will

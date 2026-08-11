@@ -9,8 +9,8 @@ Instead of ticking through time at fixed intervals, DRS calculates *exactly* whe
 - **Event-driven time stepping** — simulate years of operation in seconds
 - **PyTorch-style architecture** — `Module`, `Variable`, and `Level` compose into hierarchies with automatic dependency tracking
 - **Built-in telemetry** — every state change is logged and plotted without custom tracking code
-- **Fail-fast guardrails** — the engine stops you from breaking the physics of your model (e.g. draining an empty stockpile)
-- **Applicable to any continuous-flow system** — mining supply chains, water pipes, electrical grids, traffic, and more
+- **Fail-fast guardrails** — the engine stops you from breaking the physics of your model (e.g. draining an empty tank)
+- **Applicable to any continuous-flow system** — water networks, chemical processing, electrical grids, traffic, and more
 
 ## Installation
 
@@ -29,13 +29,13 @@ pip install python-drs[progress]   # Rich progress bar
 ```python
 from drs import DRSEngine, Module, Level
 
-class Stockpile(Module):
+class Tank(Module):
     def forward(self):
         # Fill at 50 units per time step
-        self.ore.rate = 50.0
+        self.volume.rate = 50.0
 
-model = Stockpile()
-model.ore = Level("Ore", initial_value=100.0)
+model = Tank()
+model.volume = Level("Volume", initial_value=100.0)
 
 engine = DRSEngine(model)
 result = engine.run(max_time=20.0)
