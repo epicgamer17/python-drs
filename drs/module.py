@@ -335,17 +335,14 @@ class Module:
 
     def to_dict(self, root: Optional["Module"] = None) -> dict[str, Any]:
         """
-        Returns a structural JSON-serializable representation of the module architecture.
+        Returns a structural JSON-serializable representation of the module architecture and state.
         """
-        from .variables import Level, Expression, serialize_val
+        from .variables import Level, serialize_val
 
         if root is None:
             root = self
 
-        # TODO: Why is expresison not included in serialize_val?
         def _to_dict_serialize_val(val: Any) -> Any:
-            if isinstance(val, Expression):
-                return {"equation": val.get_equation()}
             return serialize_val(val)
 
         def get_module_path(rt: Module, target: Module) -> str:
@@ -435,6 +432,47 @@ class Module:
             "children": children,
             "connections": connections,
         }
+
+    def from_dict(self, state_dict: dict[str, Any]) -> None:
+        """
+        Restores module state (variable values, rates, thresholds, custom attributes, and submodules)
+        from a Python dictionary exported via to_dict() or a flat state dict.
+        """
+        from .variables import deserialize_val
+
+        # Handle flat state dict (e.g., keys ending with .value)
+        if any(k.endswith(".value") for k in state_dict.keys()):
+            self.load_state_dict(state_dict)
+            return
+
+        # Restore user attributes
+        saved_attrs = state_dict.get("attributes", {})
+        for k, v in saved_attrs.items():
+            setattr(self, k, v)
+
+        # Restore variables
+        saved_vars = state_dict.get("variables", {})
+        for var_name, var_info in saved_vars.items():
+            if var_name not in self._variables:
+                continue
+            var = self._variables[var_name]
+            if isinstance(var_info, dict):
+                if "value" in var_info and var_info["value"] is not None:
+                    var._value = deserialize_val(var_info["value"])
+                if "rate" in var_info and var_info["rate"] is not None and hasattr(var, "_rate"):
+                    var._rate = deserialize_val(var_info["rate"])
+                if "lower_threshold" in var_info and var_info["lower_threshold"] is not None and hasattr(var, "lower_threshold"):
+                    var.lower_threshold = deserialize_val(var_info["lower_threshold"])
+                if "upper_threshold" in var_info and var_info["upper_threshold"] is not None and hasattr(var, "upper_threshold"):
+                    var.upper_threshold = deserialize_val(var_info["upper_threshold"])
+            else:
+                var._value = deserialize_val(var_info)
+
+        # Restore submodules
+        saved_children = state_dict.get("children", {})
+        for child_name, child_state in saved_children.items():
+            if child_name in self._modules:
+                self._modules[child_name].from_dict(child_state)
 
     def register_post_step_hook(self, hook_fn: Any) -> None:
         """Registers a callback to be run after every engine step."""

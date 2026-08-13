@@ -1,26 +1,59 @@
 import json
 import math
 import random
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Optional, Union
 from .module import Module
 from .variables import serialize_val, deserialize_val
 
+# TODO: seems like a bunch of helper functions should we just remove this file and inline these to the objects they are used for?
 
-def save_state(model: Module, filepath: str) -> None:
+
+def to_dict(obj: Any) -> dict[str, Any]:
+    """Exports a DRSEngine, Module, or compatible object into a primitive Python dictionary."""
+    if hasattr(obj, "to_dict") and callable(getattr(obj, "to_dict")):
+        return obj.to_dict()
+    elif hasattr(obj, "state_dict") and callable(getattr(obj, "state_dict")):
+        return obj.state_dict()
+    else:
+        raise TypeError(
+            f"Object of type {type(obj).__name__} does not support to_dict()"
+        )
+
+
+def from_dict(target: Any, state: dict[str, Any]) -> None:
+    """Restores state into a DRSEngine, Module, or compatible object from a primitive Python dictionary."""
+    if hasattr(target, "from_dict") and callable(getattr(target, "from_dict")):
+        target.from_dict(state)
+    elif hasattr(target, "load_state_dict") and callable(
+        getattr(target, "load_state_dict")
+    ):
+        target.load_state_dict(state)
+    else:
+        raise TypeError(
+            f"Object of type {type(target).__name__} does not support from_dict()"
+        )
+
+
+def save_state(model: Module, filepath: Union[str, Path]) -> None:
+    """I/O Helper: Saves module state dictionary to a JSON file via state_dict()."""
     state = model.state_dict()
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 
-def load_state(model: Module, filepath: str) -> None:
-    with open(filepath, "r") as f:
+def load_state(model: Module, filepath: Union[str, Path]) -> dict[str, Any]:
+    """I/O Helper: Loads module state dictionary from a JSON file and restores it via load_state_dict()."""
+    with open(filepath, "r", encoding="utf-8") as f:
         state = json.load(f)
     model.load_state_dict(state)
+    return state
 
 
-def export_architecture(model: Module, filepath: str) -> None:
-    arch = model.to_dict()
-    with open(filepath, "w") as f:
+def export_architecture(model: Module, filepath: Union[str, Path]) -> None:
+    """I/O Helper: Exports module architectural structure to a JSON file via to_dict()."""
+    arch = to_dict(model)
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(arch, f, indent=2)
 
 
@@ -188,7 +221,8 @@ def _restore_dependency_topology(
             target_mod._record_data_edge(source_mod)
 
 
-def save_checkpoint(engine: Any, filepath: str) -> None:
+def engine_to_dict(engine: Any) -> dict[str, Any]:
+    """Exports full engine and model execution state to a primitive Python dictionary."""
     model = engine.model
     id_to_name = {id(mod): name for name, mod in model.named_modules()}
 
@@ -263,7 +297,7 @@ def save_checkpoint(engine: Any, filepath: str) -> None:
             "history_cursor": len(engine.telemetry.history),
         }
 
-    checkpoint = {
+    return {
         "drs_version": "1.0",
         "engine": {
             "current_time": engine.current_time,
@@ -279,23 +313,18 @@ def save_checkpoint(engine: Any, filepath: str) -> None:
         "variables_state": variables_state,
     }
 
-    with open(filepath, "w") as f:
-        json.dump(checkpoint, f, indent=2)
 
-
-def load_checkpoint(engine: Any, filepath: str) -> None:
-    with open(filepath, "r") as f:
-        checkpoint = json.load(f)
-
+def engine_from_dict(engine: Any, state: dict[str, Any]) -> None:
+    """Restores full engine and model execution state from a primitive Python dictionary."""
     model = engine.model
 
     current_structure = _serialize_module_structure(model)
-    _validate_structure(current_structure, checkpoint["model_structure"])
+    _validate_structure(current_structure, state["model_structure"])
 
-    _restore_module_attributes(model, checkpoint["model_structure"])
+    _restore_module_attributes(model, state["model_structure"])
 
     name_to_mod = {name: mod for name, mod in model.named_modules()}
-    variables_state = checkpoint["variables_state"]
+    variables_state = state["variables_state"]
     for var_path, var_state in variables_state.items():
         parts = var_path.split(".")
         var_name = parts[-1]
@@ -351,7 +380,7 @@ def load_checkpoint(engine: Any, filepath: str) -> None:
             if hasattr(var, "_rate_set_by"):
                 var._rate_set_by = None
 
-    engine_data = checkpoint["engine"]
+    engine_data = state["engine"]
     engine.current_time = engine_data["current_time"]
     engine.step_count = engine_data["step_count"]
     engine._consecutive_zero_dt_count = engine_data["_consecutive_zero_dt_count"]
@@ -405,4 +434,20 @@ def load_checkpoint(engine: Any, filepath: str) -> None:
             )
         engine.telemetry.events = deserialized_events
 
-    _restore_dependency_topology(model, checkpoint.get("topology"))
+    _restore_dependency_topology(model, state.get("topology"))
+
+
+def save_checkpoint(engine: Any, filepath: Union[str, Path]) -> None:
+    """I/O Helper: Saves engine or module checkpoint state to a JSON file via to_dict()."""
+    checkpoint = to_dict(engine)
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(checkpoint, f, indent=2)
+
+
+def load_checkpoint(engine: Any, filepath: Union[str, Path]) -> dict[str, Any]:
+    """I/O Helper: Loads checkpoint dictionary from a JSON file and restores it via from_dict()."""
+    with open(filepath, "r", encoding="utf-8") as f:
+        checkpoint = json.load(f)
+    from_dict(engine, checkpoint)
+    return checkpoint
+

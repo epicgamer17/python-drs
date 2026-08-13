@@ -3,7 +3,8 @@ import logging
 import random
 from dataclasses import dataclass
 import time
-from typing import Tuple, Optional, Any
+from pathlib import Path
+from typing import Tuple, Optional, Any, Union
 import pandas as pd
 from .variables import Variable, Level
 from .module import Module
@@ -156,17 +157,29 @@ class DRSEngine:
         """
         self.telemetry = telemetry
 
-    def save_checkpoint(self, filepath: str) -> None:
+    def to_dict(self) -> dict[str, Any]:
+        """Exports the full engine and model execution state to a primitive Python dictionary."""
+        from .serialize import engine_to_dict
+
+        return engine_to_dict(self)
+
+    def from_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restores the full engine and model execution state from a primitive Python dictionary."""
+        from .serialize import engine_from_dict
+
+        engine_from_dict(self, state_dict)
+
+    def save_checkpoint(self, filepath: Union[str, Path]) -> None:
         """Save the full engine and model state to a JSON file."""
         from .serialize import save_checkpoint
 
         save_checkpoint(self, filepath)
 
-    def load_checkpoint(self, filepath: str) -> None:
+    def load_checkpoint(self, filepath: Union[str, Path]) -> dict[str, Any]:
         """Load the full engine and model state from a JSON file."""
         from .serialize import load_checkpoint
 
-        load_checkpoint(self, filepath)
+        return load_checkpoint(self, filepath)
 
     def run(self, max_time: Optional[float] = None) -> SimulationResult:
         """

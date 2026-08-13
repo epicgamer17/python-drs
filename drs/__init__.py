@@ -15,6 +15,8 @@ from .telemetry import Telemetry
 from .exceptions import StateMutationError, DeadlockError
 from .callbacks import Callback, ProgressBarCallback
 from .serialize import (
+    to_dict,
+    from_dict,
     save_state,
     load_state,
     export_architecture,
@@ -38,6 +40,8 @@ __all__ = [
     "Telemetry",
     "StateMutationError",
     "DeadlockError",
+    "to_dict",
+    "from_dict",
     "save_state",
     "load_state",
     "export_architecture",

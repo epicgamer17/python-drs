@@ -8,6 +8,8 @@ from .exceptions import StateMutationError
 def serialize_val(val: Any) -> Any:
     if isinstance(val, enum.Enum):
         return val.name
+    if hasattr(val, "get_equation") and callable(getattr(val, "get_equation")):
+        return {"equation": val.get_equation()}
     if (
         hasattr(val, "name")
         and hasattr(val, "id")
