@@ -161,8 +161,9 @@ class Module:
                 raise AttributeError(
                     "Cannot assign variable before Module.__init__() call"
                 )
-            self._variables[name] = value
-            value._owner = self
+            if value._owner is None:
+                self._variables[name] = value
+                value._owner = self
         elif isinstance(value, Module) and name != "parent":
             if not hasattr(self, "_modules"):
                 raise AttributeError(

@@ -213,6 +213,15 @@ class Variable:
         self._value = initial_value
         self._owner = None
 
+    def _get_current_val(self) -> Any:
+        """Internal helper to resolve simulation value and log dependencies."""
+        self._record_read_dependency()
+        if ExecutionContext.is_tracing():
+            return self
+        if isinstance(self._value, Expression):
+            return self._value.evaluate()
+        return self._value
+
     def _sim_value(self) -> Any:
         if isinstance(self._value, Expression):
             return self._value.evaluate()
@@ -232,6 +241,27 @@ class Variable:
         if current is not None and current is not self._owner:
             current._record_incoming_edge(self)
 
+    # Allows accessing directly as a class descriptor attribute on owner modules
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._get_current_val()
+
+    # Automatic cast to float in numeric operations
+    def __float__(self) -> float:
+        val = self._get_current_val()
+        if val is self:
+            if isinstance(self._value, Expression):
+                return float(self._value.evaluate())
+            return float(self._value)
+        return float(val)
+
+    def __repr__(self) -> str:
+        val = self._get_current_val()
+        if val is self:
+            val = self._sim_value()
+        return f"<{type(self).__name__} {self.name}: {val}>"
+
     @property
     def value(self) -> Any:
         """
@@ -243,10 +273,7 @@ class Variable:
         Returns:
             Any: The underlying value of the variable.
         """
-        self._record_read_dependency()
-        if ExecutionContext.is_tracing():
-            return self
-        return self._sim_value()
+        return self._get_current_val()
 
     @value.setter
     def value(self, val: Any) -> None:
