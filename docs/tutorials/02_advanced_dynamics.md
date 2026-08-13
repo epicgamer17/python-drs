@@ -101,11 +101,9 @@ If you configure a threshold on a `Level` but its rate is `0.0`, the threshold w
 If you enable **strict mode**, the engine will raise a `ThresholdConfigurationError` instead of warning.
 
 ```python
-from drs.config import EngineConfig
 from drs.engine import DRSEngine
 
-config = EngineConfig(strict_mode=True)
-engine = DRSEngine(model, config=config)
+engine = DRSEngine(model, strict_mode=True)
 ```
 
 Now you know how the engine drives state transitions safely and efficiently. Move on to [Tutorial 3: Streaming Inputs & Data Sources](03_data_streams.md) to learn how to feed external data streams into your models.

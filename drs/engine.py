@@ -9,7 +9,6 @@ from .variables import Variable, Level
 from .module import Module
 from ._execution_context import ExecutionContext
 from .exceptions import DeadlockError, ThresholdConfigurationError
-from .config import EngineConfig
 from .callbacks import Callback, ProgressBarCallback
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,6 @@ class SimulationResult:
     """Encapsulates the final results of a simulation run."""
 
     model: Module
-    config: Any
     duration: float  # wall time
     steps: int  # number of engine ticks
     sim_time: float  # simulation time reached
@@ -94,7 +92,10 @@ class DRSEngine:
     def __init__(
         self,
         model: Module,
-        config: Optional[EngineConfig] = None,
+        max_step_size: float = 0.5,
+        max_deadlock_steps: int = 20,
+        max_time: Optional[float] = None,
+        strict_mode: bool = False,
         progress_bar: bool = False,
         log_level: Optional[str] = None,
         callbacks: Optional[list[Callback]] = None,
@@ -106,7 +107,10 @@ class DRSEngine:
 
         Args:
             model (Module): The root Module of your simulation.
-            config (Optional[EngineConfig]): Configuration for the engine.
+            max_step_size (float): The maximum allowed time step (dt). Default is 0.5.
+            max_deadlock_steps (int): The maximum consecutive zero-time steps allowed. Default is 20.
+            max_time (Optional[float]): Optional default maximum simulation time. Default is None.
+            strict_mode (bool): If True, raise ThresholdConfigurationError on orphaned thresholds. Default is False.
             progress_bar (bool): If True, attaches a Rich progress bar callback.
             log_level (Optional[str]): If provided, configures structured logging at this level.
             callbacks (Optional[list[Callback]]): Custom callbacks to attach.
@@ -123,20 +127,22 @@ class DRSEngine:
         if progress_bar:
             self.callbacks.append(ProgressBarCallback())
 
-        if config is None:
-            config = EngineConfig()
-
         for k, v in kwargs.items():
-            if hasattr(config, k):
-                setattr(config, k, v)
+            if k == "max_step_size":
+                max_step_size = v
+            elif k == "max_deadlock_steps":
+                max_deadlock_steps = v
+            elif k == "max_time":
+                max_time = v
+            elif k == "strict_mode":
+                strict_mode = v
 
-        self.config = config
+        self.max_step_size = max_step_size
+        self.max_deadlock_steps = max_deadlock_steps
+        self.max_time = max_time
+        self.strict_mode = strict_mode
+
         self.current_time = 0.0
-        self.max_step_size = (
-            self.config.max_step_size
-        )  # TODO: why do we have this? why is it not inf by default?
-        self.max_deadlock_steps = self.config.max_deadlock_steps
-        self.strict_mode = self.config.strict_mode
         self._orphaned_warned_ids = set()
         self.telemetry = None
         self.step_count = 0
@@ -162,7 +168,7 @@ class DRSEngine:
 
         load_checkpoint(self, filepath)
 
-    def run(self, max_time: float) -> SimulationResult:
+    def run(self, max_time: Optional[float] = None) -> SimulationResult:
         """
         Execute the main simulation loop.
 
@@ -171,13 +177,21 @@ class DRSEngine:
         (`dt`), and integrates all variables forward by `dt`.
 
         Args:
-            max_time (float): The maximum simulation time to run until.
+            max_time (Optional[float]): The maximum simulation time to run until.
+                If not specified, defaults to `self.max_time` configured on the engine.
 
         Raises:
+            ValueError: If `max_time` is not specified either in DRSEngine or run().
             RuntimeError: If the engine encounters a deadlock (too many consecutive
                 zero-time steps).
-            ValueError: If the calculated time delta (`dt`) is negative.
         """
+        if max_time is None:
+            max_time = self.max_time
+
+        if max_time is None:
+            raise ValueError(
+                "max_time must be specified either when initializing DRSEngine(max_time=...) or passed to engine.run(max_time)."
+            )
 
         if self._seed is not None:
             random.seed(self._seed)
@@ -233,7 +247,6 @@ class DRSEngine:
 
         result = SimulationResult(
             model=self.model,
-            config=self.config,
             duration=end_time - start_time,
             steps=steps,
             sim_time=self.current_time,

@@ -39,5 +39,4 @@ nav:
       - Logging & Telemetry: api/flow_telemetry.md
       - Callbacks: api/callbacks.md
       - Serialization: api/serialization.md
-      - Config: api/config.md
       - Exceptions: api/exceptions.md

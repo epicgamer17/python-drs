@@ -13,7 +13,6 @@ from .data_source import DataPoint
 from .flow import Flow
 from .telemetry import Telemetry
 from .exceptions import StateMutationError, DeadlockError
-from .config import DRSConfig, EngineConfig
 from .callbacks import Callback, ProgressBarCallback
 from .serialize import (
     save_state,
@@ -39,8 +38,6 @@ __all__ = [
     "Telemetry",
     "StateMutationError",
     "DeadlockError",
-    "DRSConfig",
-    "EngineConfig",
     "save_state",
     "load_state",
     "export_architecture",
