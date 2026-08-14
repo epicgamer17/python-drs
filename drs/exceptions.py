@@ -5,11 +5,11 @@ class DRSError(Exception):
 
 
 class StateMutationError(DRSError):
-    """Raised when a module attempts to illegally mutate state."""
+    """Raised when a module attempts to illegally mutate state owned by another module."""
 
     def __init__(self, message: str):
-        # Capture the call stack from ExecutionContext
         from ._execution_context import ExecutionContext
+
         stack = getattr(ExecutionContext._local, "stack", [])
         if stack:
             stack_str = " -> ".join([type(mod).__name__ for mod in stack])

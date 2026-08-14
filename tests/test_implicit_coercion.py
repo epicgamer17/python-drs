@@ -1,7 +1,6 @@
 import pytest
 import math
 from drs import Module, DRSEngine, Variable, Level, Timer
-from drs._execution_context import ExecutionContext
 
 
 class MineModule(Module):
@@ -61,42 +60,3 @@ def test_descriptor_protocol_get():
     mod = ClassDescriptorModule()
     assert mod.x == 42.0
     assert mod.y == 8.0
-
-
-def test_tracing_mode_safe_float_and_repr():
-    var = Variable("var", 12.5)
-    
-    # Set tracing mode on ExecutionContext
-    ExecutionContext.set_tracing(True)
-    try:
-        val = var._get_current_val()
-        assert val is var
-        assert float(var) == 12.5
-        assert repr(var) == "<Variable var: 12.5>"
-    finally:
-        ExecutionContext.set_tracing(False)
-
-
-def test_dependency_logging_without_dot_value():
-    class ReaderModule(Module):
-        def __init__(self, source_var):
-            super().__init__()
-            self.source_var = source_var
-            self.read_val = Variable("read_val", 0.0)
-
-        def forward(self):
-            # Reading source_var directly without .value
-            self.read_val.value = float(self.source_var) * 2.0
-
-    writer = MineModule()
-    reader = ReaderModule(writer.cumulative_extracted_mass)
-
-    # Run one step inside execution context
-    ExecutionContext.push(reader)
-    try:
-        val = reader.source_var._get_current_val()
-    finally:
-        ExecutionContext.pop()
-
-    # Verify dependency incoming edge recorded
-    assert any(dep[1] is writer.cumulative_extracted_mass for dep in reader._dependencies)

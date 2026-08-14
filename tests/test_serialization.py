@@ -86,7 +86,6 @@ def test_engine_to_dict_and_from_dict():
     assert isinstance(state_dict, dict)
     assert state_dict["engine"]["current_time"] >= 5.0
     assert "variables_state" in state_dict
-    assert "topology" in state_dict
 
     # Verify JSON dumps
     json_str = json.dumps(state_dict)

@@ -8,8 +8,6 @@ from .exceptions import StateMutationError
 def serialize_val(val: Any) -> Any:
     if isinstance(val, enum.Enum):
         return val.name
-    if hasattr(val, "get_equation") and callable(getattr(val, "get_equation")):
-        return {"equation": val.get_equation()}
     if (
         hasattr(val, "name")
         and hasattr(val, "id")
@@ -34,264 +32,59 @@ def deserialize_val(val: Any) -> Any:
     return val
 
 
-class Expression:
-    """AST node for tracking mathematical dependencies between Variables."""
-
-    def __init__(self, op: str, left: Any, right: Any):
-        self.op = op
-        self.left = left
-        self.right = right
-
-    def evaluate(self) -> float:
-        def get_val(node):
-            if isinstance(node, Expression):
-                return node.evaluate()
-            if hasattr(node, "_sim_value"):
-                return node._sim_value()
-            return node
-
-        l_val = get_val(self.left)
-        r_val = get_val(self.right)
-
-        if self.op == "neg":
-            return -l_val
-        if self.op == "pos":
-            return +l_val
-        if self.op == "abs":
-            return abs(l_val)
-        if self.op == "add":
-            return l_val + r_val
-        if self.op == "sub":
-            return l_val - r_val
-        if self.op == "mul":
-            return l_val * r_val
-        if self.op == "div":
-            return l_val / r_val if r_val != 0 else 0.0
-        if self.op == "gt":
-            return l_val > r_val
-        if self.op == "lt":
-            return l_val < r_val
-        if self.op == "ge":
-            return l_val >= r_val
-        if self.op == "le":
-            return l_val <= r_val
-        if self.op == "eq":
-            return l_val == r_val
-        if self.op == "ne":
-            return l_val != r_val
-        if self.op == "pow":
-            return l_val**r_val
-        return 0.0
-
-    def get_sources(self) -> list:
-        sources = set()
-        for side in (self.left, self.right):
-            if hasattr(side, "get_sources"):
-                sources.update(side.get_sources())
-            elif isinstance(side, Variable):
-                sources.add(side)
-        return list(sources)
-
-    def get_equation(self) -> str:
-        op_chars = {
-            "add": "+",
-            "sub": "-",
-            "mul": "*",
-            "div": "/",
-            "gt": ">",
-            "lt": "<",
-            "ge": ">=",
-            "le": "<=",
-            "eq": "==",
-            "ne": "!=",
-            "pow": "**",
-        }
-        unary_chars = {"neg": "-", "pos": "+", "abs": "|"}
-
-        def format_node(node):
-            if isinstance(node, Expression):
-                return node.get_equation()
-            if hasattr(node, "name"):
-                mod = getattr(node, "_owner", None)
-                if mod and hasattr(mod, "name"):
-                    return f"{mod.name}.{node.name}"
-                elif mod:
-                    return f"{type(mod).__name__}.{node.name}"
-                return node.name
-            return str(node)
-
-        if self.op in unary_chars:
-            l = unary_chars[self.op]
-            r = unary_chars[self.op] if self.op == "abs" else ""
-            return f"({l}{format_node(self.left)}{r})"
-        return f"({format_node(self.left)} {op_chars.get(self.op, '?')} {format_node(self.right)})"
-
-    def __bool__(self):
-        raise TypeError(
-            f"Cannot use Expression ('{self.get_equation()}') as a boolean. "
-            f"Use `.value` for immediate evaluation or `drs.Where()` for symbolic branching."
-        )
-
-    def __neg__(self):
-        return Expression("neg", self, None)
-
-    def __pos__(self):
-        return Expression("pos", self, None)
-
-    def __abs__(self):
-        return Expression("abs", self, None)
-
-    def __add__(self, other):
-        return Expression("add", self, other)
-
-    def __sub__(self, other):
-        return Expression("sub", self, other)
-
-    def __mul__(self, other):
-        return Expression("mul", self, other)
-
-    def __truediv__(self, other):
-        return Expression("div", self, other)
-
-    def __radd__(self, other):
-        return Expression("add", other, self)
-
-    def __rsub__(self, other):
-        return Expression("sub", other, self)
-
-    def __rmul__(self, other):
-        return Expression("mul", other, self)
-
-    def __rtruediv__(self, other):
-        return Expression("div", other, self)
-
-    def __gt__(self, other):
-        return Expression("gt", self, other)
-
-    def __lt__(self, other):
-        return Expression("lt", self, other)
-
-    def __ge__(self, other):
-        return Expression("ge", self, other)
-
-    def __le__(self, other):
-        return Expression("le", self, other)
-
-    def __eq__(self, other):
-        return Expression("eq", self, other)
-
-    def __ne__(self, other):
-        return Expression("ne", self, other)
-
-    def __pow__(self, other):
-        return Expression("pow", self, other)
-
-    def __rpow__(self, other):
-        return Expression("pow", other, self)
-
-
 class Variable:
     """Base class for all domain variables.
 
-    Variables hold named state and belong to a specific `Module` owner. They ensure
-    that state is tracked properly through the execution context and prevent
-    cross-module mutation.
+    Variables hold named state. They ensure that state changes can be logged
+    and accessed seamlessly.
 
     Attributes:
         name (str): The unique name of the variable.
     """
 
-    def __init__(self, name: str, initial_value: Any = 0.0) -> None:
+    def __init__(self, name: str, initial_value: Any = 0.0, owner: Any = None) -> None:
         """
         Initialize a new Variable.
 
         Args:
             name: The unique name of the variable.
             initial_value: The starting value (default: 0.0).
+            owner: The owning Module instance (default: None).
         """
         self.name = name
         self._value = initial_value
-        self._owner = None
-
-    def _get_current_val(self) -> Any:
-        """Internal helper to resolve simulation value and log dependencies."""
-        self._record_read_dependency()
-        if ExecutionContext.is_tracing():
-            return self
-        if isinstance(self._value, Expression):
-            return self._value.evaluate()
-        return self._value
-
-    def _sim_value(self) -> Any:
-        if isinstance(self._value, Expression):
-            return self._value.evaluate()
-        return self._value
-
-    def get_sources(self) -> list:
-        return [self]
-
-    def _record_read_dependency(self) -> None:
-        """
-        [INTERNAL] Record that the current executing module has read this variable.
-
-        Power User Note: This is called automatically by the `value` getter. It
-        interfaces with the ExecutionContext to build the dependency graph.
-        """
-        current = ExecutionContext.get_current()
-        if current is not None and current is not self._owner:
-            current._record_incoming_edge(self)
+        self._owner = owner
 
     # Allows accessing directly as a class descriptor attribute on owner modules
     def __get__(self, instance, owner=None):
         if instance is None:
             return self
-        return self._get_current_val()
+        return self._value
 
     # Automatic cast to float in numeric operations
     def __float__(self) -> float:
-        val = self._get_current_val()
-        if val is self:
-            if isinstance(self._value, Expression):
-                return float(self._value.evaluate())
-            return float(self._value)
-        return float(val)
+        return float(self._value)
 
     def __repr__(self) -> str:
-        val = self._get_current_val()
-        if val is self:
-            val = self._sim_value()
-        return f"<{type(self).__name__} {self.name}: {val}>"
+        return f"<{type(self).__name__} {self.name}: {self._value}>"
 
     @property
     def value(self) -> Any:
-        """
-        Get the current value of the variable.
-
-        Reading this automatically records a dependency edge in the execution context,
-        linking the module that read it to the module that owns it.
-
-        Returns:
-            Any: The underlying value of the variable.
-        """
-        return self._get_current_val()
+        """Get the current value of the variable."""
+        return self._value
 
     @value.setter
     def value(self, val: Any) -> None:
-        """
-        Set the value of the variable.
-
-        Args:
-            val (Any): The new value to set.
-
-        Raises:
-            RuntimeError: If a module attempts to mutate a variable it does not own.
-        """
-        current = ExecutionContext.get_current()
-        if current is not None and current is not self._owner:
+        """Set the value of the variable."""
+        current_actor = ExecutionContext.get_current()
+        if (
+            current_actor is not None
+            and self._owner is not None
+            and current_actor is not self._owner
+        ):
             raise StateMutationError(
-                f"Illegal Mutation: {type(current).__name__} tried to mutate "
-                f"'{self.name}' owned by {type(self._owner).__name__}. "
-                f"Modules must communicate by passing Flows. Do not mutate state directly!"
+                f"Illegal Mutation: '{type(current_actor).__name__}' attempted to modify state "
+                f"'{self.name}' owned by '{type(self._owner).__name__}'. Use flow rates instead!"
             )
 
         if self._value != val:
@@ -300,7 +93,7 @@ class Variable:
                 engine.telemetry.log_event(
                     time=engine.current_time,
                     event_type="STATE_CHANGE",
-                    source=type(current).__name__ if current else "External",
+                    source=type(current_actor).__name__ if current_actor else "External",
                     details={
                         "variable": self.name,
                         "old_value": self._value,
@@ -323,131 +116,61 @@ class Variable:
             f"Only drs.Level supports .rate."
         )
 
-    def _unary(self, op: str):
-        self._record_read_dependency()
-        if ExecutionContext.is_tracing():
-            return Expression(op, self, None)
-        l_val = self._sim_value()
-        if op == "neg":
-            return -l_val
-        if op == "pos":
-            return +l_val
-        if op == "abs":
-            return abs(l_val)
-        return NotImplemented
+    def _val(self, other: Any) -> Any:
+        return other._value if isinstance(other, Variable) else other
 
-    def _op(self, op: str, other):
-        self._record_read_dependency()
-        if isinstance(other, Variable):
-            other._record_read_dependency()
-        if ExecutionContext.is_tracing():
-            return Expression(op, self, other)
-        r_val = other._sim_value() if isinstance(other, Variable) else other
-        if isinstance(r_val, Expression):
-            r_val = r_val.evaluate()
-        l_val = self._sim_value()
-        if op == "add":
-            return l_val + r_val
-        if op == "sub":
-            return l_val - r_val
-        if op == "mul":
-            return l_val * r_val
-        if op == "div":
-            return l_val / r_val if r_val != 0 else 0.0
-        if op == "gt":
-            return l_val > r_val
-        if op == "lt":
-            return l_val < r_val
-        if op == "ge":
-            return l_val >= r_val
-        if op == "le":
-            return l_val <= r_val
-        if op == "eq":
-            return l_val == r_val
-        if op == "ne":
-            return l_val != r_val
-        if op == "pow":
-            return l_val**r_val
-        return NotImplemented
+    def __add__(self, other: Any) -> Any:
+        return self._value + self._val(other)
 
-    def _rop(self, op: str, other):
-        self._record_read_dependency()
-        if isinstance(other, Variable):
-            other._record_read_dependency()
-        if ExecutionContext.is_tracing():
-            return Expression(op, other, self)
-        l_val = other._sim_value() if isinstance(other, Variable) else other
-        if isinstance(l_val, Expression):
-            l_val = l_val.evaluate()
-        r_val = self._sim_value()
-        if op == "add":
-            return l_val + r_val
-        if op == "sub":
-            return l_val - r_val
-        if op == "mul":
-            return l_val * r_val
-        if op == "div":
-            return l_val / r_val if r_val != 0 else 0.0
-        if op == "pow":
-            return l_val**r_val
-        return NotImplemented
+    def __radd__(self, other: Any) -> Any:
+        return self._val(other) + self._value
 
-    def __neg__(self):
-        return self._unary("neg")
+    def __sub__(self, other: Any) -> Any:
+        return self._value - self._val(other)
 
-    def __pos__(self):
-        return self._unary("pos")
+    def __rsub__(self, other: Any) -> Any:
+        return self._val(other) - self._value
 
-    def __abs__(self):
-        return self._unary("abs")
+    def __mul__(self, other: Any) -> Any:
+        return self._value * self._val(other)
 
-    def __add__(self, other):
-        return self._op("add", other)
+    def __rmul__(self, other: Any) -> Any:
+        return self._val(other) * self._value
 
-    def __sub__(self, other):
-        return self._op("sub", other)
+    def __truediv__(self, other: Any) -> Any:
+        r = self._val(other)
+        return self._value / r if r != 0 else 0.0
 
-    def __mul__(self, other):
-        return self._op("mul", other)
+    def __rtruediv__(self, other: Any) -> Any:
+        l = self._val(other)
+        return l / self._value if self._value != 0 else 0.0
 
-    def __truediv__(self, other):
-        return self._op("div", other)
+    def __pow__(self, other: Any) -> Any:
+        return self._value ** self._val(other)
 
-    def __radd__(self, other):
-        return self._rop("add", other)
+    def __rpow__(self, other: Any) -> Any:
+        return self._val(other) ** self._value
 
-    def __rsub__(self, other):
-        return self._rop("sub", other)
+    def __neg__(self) -> Any:
+        return -self._value
 
-    def __rmul__(self, other):
-        return self._rop("mul", other)
+    def __pos__(self) -> Any:
+        return +self._value
 
-    def __rtruediv__(self, other):
-        return self._rop("div", other)
+    def __abs__(self) -> Any:
+        return abs(self._value)
 
-    def __gt__(self, other):
-        return self._op("gt", other)
+    def __lt__(self, other: Any) -> bool:
+        return self._value < self._val(other)
 
-    def __lt__(self, other):
-        return self._op("lt", other)
+    def __le__(self, other: Any) -> bool:
+        return self._value <= self._val(other)
 
-    def __ge__(self, other):
-        return self._op("ge", other)
+    def __gt__(self, other: Any) -> bool:
+        return self._value > self._val(other)
 
-    def __le__(self, other):
-        return self._op("le", other)
-
-    def __eq__(self, other):
-        return self._op("eq", other)
-
-    def __ne__(self, other):
-        return self._op("ne", other)
-
-    def __pow__(self, other):
-        return self._op("pow", other)
-
-    def __rpow__(self, other):
-        return self._rop("pow", other)
+    def __ge__(self, other: Any) -> bool:
+        return self._value >= self._val(other)
 
     def __hash__(self) -> int:
         return id(self)
@@ -460,8 +183,7 @@ class Level(Variable):
     continuously over time (e.g., volume in a tank, energy in a battery).
 
     Attributes:
-        upper_threshold (float): The maximum limit for the level. The engine will
-            stop exactly at this boundary. Defaults to math.inf.
+        upper_threshold (float): The maximum limit for the level. Defaults to math.inf.
         lower_threshold (float): The minimum limit for the level. Defaults to -math.inf.
     """
 
@@ -480,7 +202,6 @@ class Level(Variable):
         self._rate = rate
         self.upper_threshold = math.inf
         self.lower_threshold = -math.inf
-        self._rate_set_by = None
 
     @property
     def rate(self) -> float:
@@ -490,11 +211,6 @@ class Level(Variable):
         Returns:
             float: The rate at which the level is currently accumulating per time unit.
         """
-        self._record_read_dependency()
-        if ExecutionContext.is_tracing():
-            return self._rate
-        if isinstance(self._rate, Expression):
-            return self._rate.evaluate()
         return self._rate
 
     @rate.setter
@@ -509,24 +225,6 @@ class Level(Variable):
         Raises:
             ValueError: If a tuple is provided but it does not have exactly 3 elements.
         """
-        current_actor = ExecutionContext.get_current()
-        if current_actor is not None and current_actor is not self._owner:
-            if hasattr(current_actor, "_record_incoming_edge"):
-                current_actor._record_incoming_edge(self)
-
-        # Rate override guardrail
-        if (
-            current_actor is not None
-            and self._rate_set_by is not None
-            and self._rate_set_by is not current_actor
-        ):
-            raise StateMutationError(
-                f"Rate Conflict: '{type(current_actor).__name__}' attempted to set the rate of "
-                f"'{self.name}', but it was already set by '{type(self._rate_set_by).__name__}' "
-                f"during this time step. Multiple modules cannot control the rate of the same Level."
-            )
-        self._rate_set_by = current_actor
-
         if isinstance(val, tuple):
             if len(val) == 3:
                 self._rate, self.lower_threshold, self.upper_threshold = val
@@ -538,9 +236,6 @@ class Level(Variable):
     def _update(self, dt: float) -> None:
         """
         [INTERNAL] Step the level forward in time based on its current rate.
-
-        Power User Note: This is called automatically by the DRSEngine. Do not call this
-        manually unless you are implementing a custom time-stepping loop.
 
         Args:
             dt (float): The amount of time to simulate.

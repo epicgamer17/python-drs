@@ -8,7 +8,7 @@ logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 from .module import Module, DataSource
 from .engine import DRSEngine, SimulationResult
-from .variables import Variable, Level, Timer, Expression
+from .variables import Variable, Level, Timer
 from .data_source import DataPoint
 from .flow import Flow
 from .telemetry import Telemetry
@@ -32,7 +32,6 @@ __all__ = [
     "Variable",
     "Level",
     "Timer",
-    "Expression",
     "DataPoint",
     "DataSource",
     "Module",

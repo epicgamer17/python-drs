@@ -20,26 +20,7 @@ class ExecutionContext:
         """
         if not hasattr(cls._local, "stack"):
             cls._local.stack = []
-            cls._local.flow_edges = []
         cls._local.stack.append(module)
-
-    @classmethod
-    def set_tracing(cls, enabled: bool = True):
-        """
-        [INTERNAL] Toggle symbolic tracing mode.
-
-        Power User Note: Enables AST expression recording instead of eager evaluation.
-        """
-        cls._local.tracing = enabled
-
-    @classmethod
-    def is_tracing(cls) -> bool:
-        """
-        [INTERNAL] Check if symbolic tracing mode is active.
-
-        Power User Note: Used by Variable to decide whether to return expressions.
-        """
-        return getattr(cls._local, "tracing", False)
 
     @classmethod
     def pop(cls):
@@ -77,13 +58,3 @@ class ExecutionContext:
         Power User Note: Accesses thread-local storage to retrieve the running engine instance.
         """
         return getattr(cls._local, "engine", None)
-
-    @classmethod
-    def record_flow_edge(cls, source, target):
-        """
-        [INTERNAL] Record a transient flow edge between a source and target module.
-        """
-        if source is not None:
-            if not hasattr(cls._local, "flow_edges"):
-                cls._local.flow_edges = []
-            cls._local.flow_edges.append((source, target))

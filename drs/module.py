@@ -1,6 +1,6 @@
 import math
 from typing import Iterator, Any, Optional
-from .variables import Variable, Level, Timer
+from .variables import Variable, Level
 from ._execution_context import ExecutionContext
 from .data_source import DataPoint
 from .flow import Flow
@@ -23,21 +23,13 @@ class Module:
         self._modules = {}
         self.parent = None
         self._post_step_hooks = []
-        self._dependencies = []
-        self._dep_seen = set()
-        self._flow_dependencies = []
-        self._flow_dep_seen = set()
-        self._data_dependencies = []
-        self._data_dep_seen = set()
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """
         Execute the forward pass while managing the ExecutionContext.
 
         This method acts as a wrapper around `forward()`. It pushes this module
-        onto the execution stack, validates that inter-module communication uses
-        only `drs.Flow` or `drs.DataPoint`, records dependency edges, and then
-        pops the execution stack.
+        onto the execution stack and pops it after `forward()` completes.
 
         Args:
             *args: Positional arguments passed to `forward()`.
@@ -47,46 +39,10 @@ class Module:
             Any: The result of the `forward()` pass.
 
         Raises:
-            RuntimeError: If invalid types are passed or returned.
+            RuntimeError: If invalid types are returned.
         """
-        caller = ExecutionContext.get_current()
         ExecutionContext.push(self)
         try:
-            if caller is not None and caller is not self:
-
-                def validate_drs_type(arg, arg_name):
-                    if arg is None:
-                        return
-                    if isinstance(arg, (tuple, list)):
-                        for item in arg:
-                            validate_drs_type(item, arg_name)
-                        return
-
-                    if not isinstance(arg, (Flow, Variable, DataPoint)):
-                        raise RuntimeError(
-                            f"Hidden Dependency Error: '{type(caller).__name__}' passed an untracked type "
-                            f"'{type(arg).__name__}' to '{type(self).__name__}' for {arg_name}. "
-                            f"Inter-module arguments MUST be drs.Flow (physics) or drs.Variable (control)."
-                        )
-
-                for i, arg in enumerate(args):
-                    validate_drs_type(arg, f"positional arg {i}")
-                for key, val in kwargs.items():
-                    validate_drs_type(val, f"keyword arg '{key}'")
-
-            for arg in args:
-                if isinstance(arg, Flow) and arg._source is not None:
-                    ExecutionContext.record_flow_edge(arg._source, self)
-                    self._record_flow_edge(arg._source)
-                elif isinstance(arg, DataPoint) and arg._source is not None:
-                    self._record_data_edge(arg._source)
-            for v in kwargs.values():
-                if isinstance(v, Flow) and v._source is not None:
-                    ExecutionContext.record_flow_edge(v._source, self)
-                    self._record_flow_edge(v._source)
-                elif isinstance(v, DataPoint) and v._source is not None:
-                    self._record_data_edge(v._source)
-
             result = self.forward(*args, **kwargs)
 
             if isinstance(result, tuple):
@@ -141,11 +97,6 @@ class Module:
         """
         raise NotImplementedError("Module subclasses must implement forward()")
 
-    # TODO: add @property def current_time(self) -> float
-    # This would implicitly grab ExecutionContext.get_engine().current_time.
-    # Benefit: Allows modules/controllers to read simulation time natively
-    # (e.g. `if self.current_time > 10.0:`) without needing to explicitly instantiate and track a Timer variable.
-
     def __setattr__(self, name: str, value: Any) -> None:
         if name.startswith("_"):
             super().__setattr__(name, value)
@@ -161,8 +112,8 @@ class Module:
                 raise AttributeError(
                     "Cannot assign variable before Module.__init__() call"
                 )
-            if value._owner is None:
-                self._variables[name] = value
+            self._variables[name] = value
+            if getattr(value, "_owner", None) is None:
                 value._owner = self
         elif isinstance(value, Module) and name != "parent":
             if not hasattr(self, "_modules"):
@@ -174,42 +125,6 @@ class Module:
                 value.parent = self
 
         super().__setattr__(name, value)
-
-    def _record_incoming_edge(self, variable: Variable) -> None:
-        """
-        [INTERNAL] Record that this module reads 'variable' (owned by another module).
-
-        Power User Note: Automatically called by the ExecutionContext to build graphs.
-        """
-        if variable._owner is not None and variable._owner is not self:
-            key = (id(variable._owner), id(variable))
-            if key not in self._dep_seen:
-                self._dep_seen.add(key)
-                self._dependencies.append((variable._owner, variable))
-
-    def _record_flow_edge(self, source_module: "Module") -> None:
-        """
-        [INTERNAL] Record that this module received a Flow from source_module.
-
-        Power User Note: Automatically called by the ExecutionContext to build flow graphs.
-        """
-        if source_module is not None and source_module is not self:
-            key = id(source_module)
-            if key not in self._flow_dep_seen:
-                self._flow_dep_seen.add(key)
-                self._flow_dependencies.append(source_module)
-
-    def _record_data_edge(self, source_module: "Module") -> None:
-        """
-        [INTERNAL] Record that this module received a DataPoint from source_module.
-
-        Power User Note: Automatically called by the ExecutionContext to build data graphs.
-        """
-        if source_module is not None and source_module is not self:
-            key = id(source_module)
-            if key not in self._data_dep_seen:
-                self._data_dep_seen.add(key)
-                self._data_dependencies.append(source_module)
 
     def variables(self) -> Iterator[Variable]:
         """
@@ -346,14 +261,6 @@ class Module:
         def _to_dict_serialize_val(val: Any) -> Any:
             return serialize_val(val)
 
-        def get_module_path(rt: Module, target: Module) -> str:
-            if target is rt:
-                return ""
-            for path, mod in rt.named_modules():
-                if mod is target:
-                    return path
-            return getattr(target, "name", type(target).__name__)
-
         children = {}
         for name, mod in self._modules.items():
             children[name] = mod.to_dict(root)
@@ -405,33 +312,12 @@ class Module:
                 except Exception:
                     pass
 
-        flow_inputs = []
-        for src in self._flow_dependencies:
-            flow_inputs.append(get_module_path(root, src))
-
-        data_inputs = []
-        for src in self._data_dependencies:
-            data_inputs.append(get_module_path(root, src))
-
-        variable_reads = []
-        for src_mod, var in self._dependencies:
-            variable_reads.append(
-                {"module": get_module_path(root, src_mod), "variable": var.name}
-            )
-
-        connections = {
-            "flow_inputs": flow_inputs,
-            "data_inputs": data_inputs,
-            "variable_reads": variable_reads,
-        }
-
         return {
             "class": type(self).__name__,
             "layout": layout,
             "variables": variables,
             "attributes": attributes,
             "children": children,
-            "connections": connections,
         }
 
     def from_dict(self, state_dict: dict[str, Any]) -> None:
@@ -488,21 +374,7 @@ class Module:
         for hook in self._post_step_hooks:
             hook(current_time)
 
-    def get_dependency_graph(self) -> list:
-        """
-        Get all recorded read dependencies from this module and all sub-modules.
 
-        Returns:
-            list[tuple[Module, Variable]]: A list of `(source_module, variable)` pairs
-                representing cross-module reads.
-        """
-        result = []
-        for mod in self.modules():
-            result.extend(mod._dependencies)
-        return result
-
-
-# NOTE: could remove and use just modules and Flow instead of DataSource and DataPoint. May be better.
 class DataSource(Module):
     """Yields ``DataPoint`` batches one at a time.
 
